@@ -66,12 +66,8 @@ pub fn render_gif(
     mut progress: impl FnMut(f32),
 ) -> Result<ExportResult> {
     ffmpeg_available()?;
-    let width = project.manifest.recording.region.width.round() as u32;
-    let height = project.manifest.recording.region.height.round() as u32;
-    if width == 0 || height == 0 {
-        return Err(ExportError::InvalidDimensions);
-    }
     let source_path = project.root.join(&project.manifest.recording.media_path);
+    let (width, height) = probe_media_dimensions(&source_path)?;
     let raw_events = project
         .read_events()
         .map_err(|error| std::io::Error::other(error.to_string()))?;
@@ -222,6 +218,42 @@ pub fn render_gif(
     })
 }
 
+fn probe_media_dimensions(path: &Path) -> Result<(u32, u32)> {
+    let output = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=p=0:s=x",
+        ])
+        .arg(path)
+        .output()
+        .map_err(|_| ExportError::FfmpegUnavailable)?;
+    if !output.status.success() {
+        return Err(ExportError::FfmpegFailed {
+            stage: "probe",
+            status: output.status.code().unwrap_or(-1),
+        });
+    }
+    parse_dimensions(String::from_utf8_lossy(&output.stdout).trim())
+}
+
+fn parse_dimensions(value: &str) -> Result<(u32, u32)> {
+    let (width, height) = value
+        .split_once('x')
+        .ok_or(ExportError::InvalidDimensions)?;
+    let width = width.parse().map_err(|_| ExportError::InvalidDimensions)?;
+    let height = height.parse().map_err(|_| ExportError::InvalidDimensions)?;
+    if width == 0 || height == 0 {
+        return Err(ExportError::InvalidDimensions);
+    }
+    Ok((width, height))
+}
+
 fn ffmpeg_available() -> Result<()> {
     let status = Command::new("ffmpeg")
         .args(["-hide_banner", "-version"])
@@ -263,5 +295,12 @@ mod tests {
             assert!(GifPreset::GITHUB.fps <= 15);
             assert!(GifPreset::GITHUB.colors <= 128);
         }
+    }
+
+    #[test]
+    fn media_dimensions_use_the_encoded_stream_size() {
+        assert_eq!(parse_dimensions("1349x610").unwrap(), (1349, 610));
+        assert!(parse_dimensions("1363,617").is_err());
+        assert!(parse_dimensions("0x610").is_err());
     }
 }
