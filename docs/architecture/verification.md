@@ -19,9 +19,9 @@ Verified on Windows 10 build 19045 with Rust 1.93.1, Node 24.13.1, and FFmpeg 8.
 - Smoke-test recordings use temporary directories that are deleted when each test exits.
 - No frame or input payload is sent over the network or written to diagnostic logs.
 
-## Current distribution constraint
+## Distribution media tools
 
-Development resolves `ffmpeg` from `PATH`. The installed development build is GPL-enabled and therefore is not copied into application artifacts. Release packaging must supply and checksum a replaceable LGPL-compatible FFmpeg sidecar before installers can be distributed. The unbundled executable is suitable for local vertical-slice validation only.
+Development resolves `ffmpeg` and `ffprobe` from `PATH`. Tagged Windows releases download an immutable BtbN FFmpeg 8.1 LGPL build, verify its pinned SHA-256 digest, and package the separate executables beside the application. Runtime prepends that application directory before capture threads start. The release includes the upstream license, corresponding-source location, build-script location, and archive checksum; GPL and nonfree builds are not distributed.
 
 ## Performance boundary
 

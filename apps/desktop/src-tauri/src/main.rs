@@ -378,6 +378,25 @@ fn probe_media_duration_ms(path: &std::path::Path) -> Option<u64> {
     Some((seconds * 1_000.0).round().max(0.0) as u64)
 }
 
+fn configure_bundled_media_tools() {
+    let Ok(executable) = std::env::current_exe() else {
+        return;
+    };
+    let Some(directory) = executable.parent() else {
+        return;
+    };
+    if !directory.join("ffmpeg.exe").is_file() || !directory.join("ffprobe.exe").is_file() {
+        return;
+    }
+    let current_path = std::env::var_os("PATH").unwrap_or_default();
+    let paths =
+        std::iter::once(directory.to_path_buf()).chain(std::env::split_paths(&current_path));
+    if let Ok(path) = std::env::join_paths(paths) {
+        // SAFETY: This runs at process startup before Tauri or capture threads are created.
+        unsafe { std::env::set_var("PATH", path) };
+    }
+}
+
 fn preview_is_valid(project: &Project) -> bool {
     std::fs::metadata(project.root.join("recording/preview.mp4"))
         .is_ok_and(|metadata| metadata.len() > 0)
@@ -452,6 +471,7 @@ fn normalize_region(region: Rect, bounds: Rect) -> Result<Rect, String> {
 }
 
 fn main() {
+    configure_bundled_media_tools();
     let index = ProjectIndex::open(projects_root().join("index.db"))
         .expect("Could not open the local project index");
     tauri::Builder::default()

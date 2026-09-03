@@ -46,7 +46,7 @@ The TypeScript preview evaluator and Rust export renderer share checked-in golde
 - Windows 10 or newer
 - Node.js 24+
 - Rust 1.93+
-- FFmpeg and FFprobe available on `PATH`
+- FFmpeg and FFprobe available on `PATH` for source development
 - WebView2 Runtime
 
 ```powershell
@@ -87,7 +87,7 @@ docs/architecture/     Architecture decisions and verification notes
 
 ## Releases
 
-GitHub releases are automated from tags matching `v*`. Alpha binaries do not bundle FFmpeg; install an FFmpeg build appropriate for your environment and license obligations.
+GitHub releases are automated from tags matching `v*`. Windows packages include pinned, checksum-verified LGPL FFmpeg and FFprobe sidecars, along with their license, source location, and build notice. Source builds continue to use tools from `PATH` when no bundled sidecars are present.
 
 ## Contributing
 

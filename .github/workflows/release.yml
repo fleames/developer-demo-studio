@@ -47,11 +47,16 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/package | Out-Null
+          ./scripts/package-ffmpeg-lgpl.ps1 -Destination dist/package
+          $encoders = & dist/package/ffmpeg.exe -hide_banner -encoders 2>&1 | Out-String
+          if ($encoders -notmatch "h264_mf") {
+            throw "Pinned LGPL FFmpeg build does not include the required h264_mf encoder."
+          }
           Copy-Item target/release/devdemo-app.exe dist/package/Developer-Demo-Studio.exe
           Copy-Item README.md, LICENSE dist/package/
           @"
-          Developer Demo Studio requires FFmpeg and FFprobe on PATH.
-          This alpha package does not bundle FFmpeg.
+          This package includes separately licensed LGPL FFmpeg and FFprobe
+          sidecars. See FFMPEG-NOTICE.txt and FFMPEG-LICENSE.txt.
           "@ | Set-Content dist/package/RELEASE-NOTES.txt
           Compress-Archive -Path dist/package/* -DestinationPath dist/developer-demo-studio-windows-x64.zip
           (Get-FileHash dist/developer-demo-studio-windows-x64.zip -Algorithm SHA256).Hash.ToLower() |
