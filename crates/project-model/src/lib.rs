@@ -70,6 +70,18 @@ pub struct DisplaySource {
     pub bounds: Rect,
     pub scale_factor: f64,
     pub primary: bool,
+    #[serde(default)]
+    pub kind: CaptureSourceKind,
+    #[serde(default)]
+    pub process_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptureSourceKind {
+    #[default]
+    Display,
+    Window,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -456,6 +468,8 @@ mod tests {
                 },
                 scale_factor: 1.0,
                 primary: true,
+                kind: CaptureSourceKind::Display,
+                process_name: None,
             },
             region: Rect {
                 x: 100.0,

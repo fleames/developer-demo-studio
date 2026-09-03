@@ -21,12 +21,12 @@ mod implementation {
         CaptureBackend, CaptureError, CaptureRequest, CaptureSummary, Result, validate_request,
     };
     use parking_lot::Mutex;
-    use project_model::{DisplaySource, InputEvent, MouseButton, Point, Rect};
+    use project_model::{CaptureSourceKind, DisplaySource, InputEvent, MouseButton, Point, Rect};
     use windows::Win32::{
-        Foundation::{POINT, RECT},
+        Foundation::{HWND, POINT, RECT},
         Graphics::Gdi::{GetMonitorInfoW, HMONITOR, MONITORINFO},
         UI::{
-            HiDpi::GetDpiForSystem,
+            HiDpi::{GetDpiForSystem, GetDpiForWindow},
             Input::KeyboardAndMouse::{
                 GetAsyncKeyState, VIRTUAL_KEY, VK_CONTROL, VK_ESCAPE, VK_LBUTTON, VK_LWIN,
                 VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RETURN, VK_SHIFT, VK_TAB,
@@ -41,8 +41,10 @@ mod implementation {
         monitor::Monitor,
         settings::{
             ColorFormat, CursorCaptureSettings, DirtyRegionSettings, DrawBorderSettings,
-            MinimumUpdateIntervalSettings, SecondaryWindowSettings, Settings,
+            GraphicsCaptureItemType, MinimumUpdateIntervalSettings, SecondaryWindowSettings,
+            Settings,
         },
+        window::Window,
     };
 
     type HandlerError = Box<dyn Error + Send + Sync>;
@@ -78,7 +80,7 @@ mod implementation {
 
     struct FrameFlags {
         encoder: Arc<Mutex<EncoderSink>>,
-        crop: (u32, u32, u32, u32),
+        crop: Option<(u32, u32, u32, u32)>,
         paused: Arc<AtomicBool>,
         frames: Arc<AtomicU64>,
         frame_interval: Duration,
@@ -118,8 +120,11 @@ mod implementation {
                 return Ok(());
             }
             self.last_frame = Some(now);
-            let (left, top, right, bottom) = self.flags.crop;
-            let buffer = frame.buffer_crop(left, top, right, bottom)?;
+            let buffer = if let Some((left, top, right, bottom)) = self.flags.crop {
+                frame.buffer_crop(left, top, right, bottom)?
+            } else {
+                frame.buffer()?
+            };
             let pixels = buffer.as_nopadding_buffer(&mut self.contiguous);
             if let Some(stdin) = self.flags.encoder.lock().stdin.as_mut() {
                 stdin.write_all(pixels)?;
@@ -140,6 +145,11 @@ mod implementation {
         output_path: std::path::PathBuf,
     }
 
+    enum CaptureTarget {
+        Monitor(Monitor),
+        Window(Window),
+    }
+
     #[derive(Default)]
     pub struct WindowsCaptureBackend {
         active: Mutex<Option<ActiveCapture>>,
@@ -153,8 +163,8 @@ mod implementation {
 
     #[async_trait]
     impl CaptureBackend for WindowsCaptureBackend {
-        async fn displays(&self) -> Result<Vec<DisplaySource>> {
-            enumerate_displays()
+        async fn sources(&self) -> Result<Vec<DisplaySource>> {
+            enumerate_sources()
         }
 
         async fn start(&self, request: CaptureRequest) -> Result<()> {
@@ -164,13 +174,49 @@ mod implementation {
             }
             let monitors = Monitor::enumerate().map_err(backend_error)?;
             let displays = display_sources(&monitors)?;
-            let index = displays
+            let windows = Window::enumerate().map_err(backend_error)?;
+            let window_sources = window_sources(&windows);
+            let (target, source, crop) = if let Some(index) = displays
                 .iter()
                 .position(|source| source.id == request.source_id)
-                .ok_or_else(|| {
-                    CaptureError::Unavailable("selected display no longer exists".into())
-                })?;
-            validate_request(&request, &displays[index])?;
+            {
+                validate_request(&request, &displays[index])?;
+                let source = &displays[index];
+                let left = (request.region.x - source.bounds.x).round() as u32;
+                let top = (request.region.y - source.bounds.y).round() as u32;
+                (
+                    CaptureTarget::Monitor(monitors[index]),
+                    source,
+                    Some((
+                        left,
+                        top,
+                        left + request.region.width.round() as u32,
+                        top + request.region.height.round() as u32,
+                    )),
+                )
+            } else if let Some(index) = window_sources
+                .iter()
+                .position(|source| source.id == request.source_id)
+            {
+                let source = &window_sources[index];
+                let window = windows
+                    .iter()
+                    .find(|window| window_id(window) == source.id)
+                    .copied()
+                    .ok_or_else(|| {
+                        CaptureError::Unavailable("selected window no longer exists".into())
+                    })?;
+                (CaptureTarget::Window(window), source, None)
+            } else {
+                return Err(CaptureError::Unavailable(
+                    "selected display or window no longer exists".into(),
+                ));
+            };
+            let pointer_region = if source.kind == CaptureSourceKind::Window {
+                source.bounds
+            } else {
+                request.region
+            };
 
             if let Some(parent) = request.output_path.parent() {
                 fs::create_dir_all(parent).map_err(backend_error)?;
@@ -181,27 +227,23 @@ mod implementation {
             let encoder = Arc::new(Mutex::new(encoder));
             let paused = Arc::new(AtomicBool::new(false));
             let frames = Arc::new(AtomicU64::new(0));
-            let source = &displays[index];
-            let left = (request.region.x - source.bounds.x).round() as u32;
-            let top = (request.region.y - source.bounds.y).round() as u32;
             let flags = FrameFlags {
                 encoder: encoder.clone(),
-                crop: (left, top, left + width, top + height),
+                crop,
                 paused: paused.clone(),
                 frames: frames.clone(),
                 frame_interval: Duration::from_secs_f64(1.0 / request.frame_rate.max(1) as f64),
             };
-            let settings = Settings::new(
-                monitors[index],
-                CursorCaptureSettings::WithoutCursor,
-                DrawBorderSettings::Default,
-                SecondaryWindowSettings::Default,
-                MinimumUpdateIntervalSettings::Default,
-                DirtyRegionSettings::Default,
-                ColorFormat::Rgba8,
-                flags,
-            );
-            let control = FrameHandler::start_free_threaded(settings).map_err(backend_error)?;
+            let control = match target {
+                CaptureTarget::Monitor(monitor) => {
+                    FrameHandler::start_free_threaded(capture_settings(monitor, flags))
+                        .map_err(backend_error)?
+                }
+                CaptureTarget::Window(window) => {
+                    FrameHandler::start_free_threaded(capture_settings(window, flags))
+                        .map_err(backend_error)?
+                }
+            };
             let sampler_stop = Arc::new(AtomicBool::new(false));
             let event_path = request
                 .output_path
@@ -211,7 +253,7 @@ mod implementation {
                 .join("metadata/events.jsonl");
             let sampler = spawn_pointer_sampler(
                 event_path,
-                request.region,
+                pointer_region,
                 sampler_stop.clone(),
                 paused.clone(),
                 frames.clone(),
@@ -282,9 +324,12 @@ mod implementation {
         }
     }
 
-    fn enumerate_displays() -> Result<Vec<DisplaySource>> {
+    fn enumerate_sources() -> Result<Vec<DisplaySource>> {
         let monitors = Monitor::enumerate().map_err(backend_error)?;
-        display_sources(&monitors)
+        let mut sources = display_sources(&monitors)?;
+        let windows = Window::enumerate().map_err(backend_error)?;
+        sources.extend(window_sources(&windows));
+        Ok(sources)
     }
 
     fn display_sources(monitors: &[Monitor]) -> Result<Vec<DisplaySource>> {
@@ -317,9 +362,68 @@ mod implementation {
                     },
                     scale_factor,
                     primary: monitor == &primary,
+                    kind: CaptureSourceKind::Display,
+                    process_name: None,
                 })
             })
             .collect()
+    }
+
+    fn window_sources(windows: &[Window]) -> Vec<DisplaySource> {
+        let mut sources = windows
+            .iter()
+            .filter_map(|window| {
+                let title = window.title().ok()?;
+                let rect = window.rect().ok()?;
+                let width = rect.right - rect.left;
+                let height = rect.bottom - rect.top;
+                if title.trim().is_empty() || width < 2 || height < 2 {
+                    return None;
+                }
+                let scale_factor =
+                    unsafe { GetDpiForWindow(HWND(window.as_raw_hwnd())) } as f64 / 96.0;
+                Some(DisplaySource {
+                    id: window_id(window),
+                    name: title,
+                    bounds: Rect {
+                        x: rect.left as f64,
+                        y: rect.top as f64,
+                        width: width as f64,
+                        height: height as f64,
+                    },
+                    scale_factor,
+                    primary: false,
+                    kind: CaptureSourceKind::Window,
+                    process_name: window.process_name().ok(),
+                })
+            })
+            .collect::<Vec<_>>();
+        sources.sort_by(|left, right| {
+            left.process_name
+                .cmp(&right.process_name)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        sources
+    }
+
+    fn window_id(window: &Window) -> String {
+        format!("window-{:x}", window.as_raw_hwnd() as usize)
+    }
+
+    fn capture_settings<T>(target: T, flags: FrameFlags) -> Settings<FrameFlags, T>
+    where
+        T: TryInto<GraphicsCaptureItemType>,
+    {
+        Settings::new(
+            target,
+            CursorCaptureSettings::WithoutCursor,
+            DrawBorderSettings::Default,
+            SecondaryWindowSettings::Default,
+            MinimumUpdateIntervalSettings::Default,
+            DirtyRegionSettings::Default,
+            ColorFormat::Rgba8,
+            flags,
+        )
     }
 
     fn spawn_encoder(

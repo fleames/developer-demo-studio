@@ -12,7 +12,9 @@ use capture_core::{CaptureBackend, CaptureRequest};
 use capture_windows::WindowsCaptureBackend;
 use directories::UserDirs;
 use parking_lot::Mutex;
-use project_model::{DisplaySource, InputEvent, Project, ProjectIndex, Recording, Rect, Scene};
+use project_model::{
+    CaptureSourceKind, DisplaySource, InputEvent, Project, ProjectIndex, Recording, Rect, Scene,
+};
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
@@ -50,10 +52,10 @@ struct MediaMetadata {
 }
 
 #[tauri::command]
-async fn list_displays(state: State<'_, AppState>) -> Result<Vec<DisplaySource>, String> {
+async fn list_capture_sources(state: State<'_, AppState>) -> Result<Vec<DisplaySource>, String> {
     state
         .capture
-        .displays()
+        .sources()
         .await
         .map_err(|error| error.to_string())
 }
@@ -66,14 +68,18 @@ async fn start_recording(
 ) -> Result<PathBuf, String> {
     let displays = state
         .capture
-        .displays()
+        .sources()
         .await
         .map_err(|error| error.to_string())?;
     let source = displays
         .into_iter()
         .find(|display| display.id == source_id)
         .ok_or_else(|| "Selected display is no longer available".to_string())?;
-    let region = normalize_region(region, source.bounds)?;
+    let region = if source.kind == CaptureSourceKind::Window {
+        source.bounds
+    } else {
+        normalize_region(region, source.bounds)?
+    };
     let base = projects_root();
     let root = base.join(format!("demo-{}.ddp", Uuid::new_v4()));
     let media_path = PathBuf::from("recording/source.mkv");
@@ -513,7 +519,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            list_displays,
+            list_capture_sources,
             start_recording,
             pause_recording,
             resume_recording,
@@ -606,6 +612,8 @@ mod tests {
                     bounds: region,
                     scale_factor: 1.0,
                     primary: true,
+                    kind: CaptureSourceKind::Display,
+                    process_name: None,
                 },
                 region,
                 media_path: "recording/source.mkv".into(),

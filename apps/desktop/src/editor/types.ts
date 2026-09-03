@@ -7,6 +7,8 @@ export type Display = {
   bounds: Rect
   scaleFactor: number
   primary: boolean
+  kind: 'display' | 'window'
+  processName: string | null
 }
 
 export type Zoom = {

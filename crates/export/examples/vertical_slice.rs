@@ -6,7 +6,8 @@ use std::{
 
 use analysis::{AnalysisOptions, make_beautiful};
 use project_model::{
-    DisplaySource, InputEvent, MouseButton, Point, Project, Recording, RecordingState, Rect,
+    CaptureSourceKind, DisplaySource, InputEvent, MouseButton, Point, Project, Recording,
+    RecordingState, Rect,
 };
 
 fn main() {
@@ -28,6 +29,8 @@ fn main() {
                 bounds: region,
                 scale_factor: 1.0,
                 primary: true,
+                kind: CaptureSourceKind::Display,
+                process_name: None,
             },
             region,
             media_path: PathBuf::from("recording/source.mkv"),

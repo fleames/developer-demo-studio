@@ -2,16 +2,20 @@ use std::time::Duration;
 
 use capture_core::{CaptureBackend, CaptureRequest};
 use capture_windows::WindowsCaptureBackend;
-use project_model::Rect;
+use project_model::{CaptureSourceKind, Rect};
 
 #[tokio::main]
 async fn main() {
     let backend = WindowsCaptureBackend::new();
-    let displays = backend.displays().await.expect("enumerate displays");
-    let display = displays
+    let sources = backend.sources().await.expect("enumerate capture sources");
+    let display = sources
         .iter()
-        .find(|display| display.primary)
-        .or_else(|| displays.first())
+        .find(|source| source.kind == CaptureSourceKind::Display && source.primary)
+        .or_else(|| {
+            sources
+                .iter()
+                .find(|source| source.kind == CaptureSourceKind::Display)
+        })
         .expect("at least one display");
     let width = display.bounds.width.min(640.0);
     let height = display.bounds.height.min(360.0);

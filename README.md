@@ -16,7 +16,7 @@ Developer Demo Studio records a focused region, captures cursor intent as editab
 
 ## Highlights
 
-- **Focused capture** — record a selected display region with Windows Graphics Capture.
+- **Flexible capture** — record a selected display region or any visible application window with Windows Graphics Capture.
 - **Editable interactions** — cursor positions, clicks, and safe shortcut chords remain structured metadata.
 - **Real-time preview** — WebGL2 composition driven by decoded video-frame timestamps, with a Canvas2D fallback.
 - **Production-style timeline** — scrub, trim, drag, resize, snap, zoom, undo, and redo.

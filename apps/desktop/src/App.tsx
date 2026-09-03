@@ -74,17 +74,36 @@ function App() {
     })
   }
 
+  async function refreshCaptureSources() {
+    try {
+      const items = await invoke<Display[]>('list_capture_sources')
+      setDisplays(items)
+      const source = items.find((item) => item.id === selectedDisplay)
+        ?? items.find((item) => item.primary)
+        ?? items[0]
+      if (source) {
+        setSelectedDisplay(source.id)
+        if (source.kind === 'window' || !items.some((item) => item.id === selectedDisplay)) {
+          setRegion(source.kind === 'window' ? source.bounds : centeredRegion(source.bounds))
+        }
+      }
+      setNotice(`Found ${items.filter((item) => item.kind === 'window').length} capturable windows.`)
+    } catch (error) {
+      setNotice(`Could not refresh capture sources: ${String(error)}`)
+    }
+  }
+
   useEffect(() => {
     if (!isDesktop) {
       return
     }
-    invoke<Display[]>('list_displays')
+    invoke<Display[]>('list_capture_sources')
       .then((items) => {
         setDisplays(items)
         const source = items.find((item) => item.primary) ?? items[0]
         if (source) {
           setSelectedDisplay(source.id)
-          setRegion(centeredRegion(source.bounds))
+          setRegion(source.kind === 'window' ? source.bounds : centeredRegion(source.bounds))
         }
       })
       .catch((error) => setNotice(String(error)))
@@ -465,12 +484,20 @@ function App() {
               <select value={selectedDisplay} onChange={(event) => {
                 setSelectedDisplay(event.target.value)
                 const next = displays.find((item) => item.id === event.target.value)
-                if (next) setRegion(centeredRegion(next.bounds))
+                if (next) setRegion(next.kind === 'window' ? next.bounds : centeredRegion(next.bounds))
               }}>
-                {displays.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.bounds.width}×{item.bounds.height}</option>)}
+                <optgroup label="Displays">
+                  {displays.filter((item) => item.kind === 'display').map((item) =>
+                    <option key={item.id} value={item.id}>{item.name} · {item.bounds.width}×{item.bounds.height}</option>)}
+                </optgroup>
+                <optgroup label="Applications and windows">
+                  {displays.filter((item) => item.kind === 'window').map((item) =>
+                    <option key={item.id} value={item.id}>{item.processName ?? 'Application'} · {item.name} · {item.bounds.width}×{item.bounds.height}</option>)}
+                </optgroup>
               </select>
             </label>
-            {display && <div
+            <button className="refresh-sources" onClick={refreshCaptureSources}>Refresh windows</button>
+            {display?.kind === 'display' && <div
               className="region-map"
               style={{ aspectRatio: `${display.bounds.width}/${display.bounds.height}` }}
               onPointerDown={selectRegion}
@@ -486,10 +513,15 @@ function App() {
               }}><small>RECORD REGION</small></span>
               <b>{display.name}</b>
             </div>}
+            {display?.kind === 'window' && <div className="window-source-card">
+              <strong>{display.processName ?? 'Application window'}</strong>
+              <b>{display.name}</b>
+              <span>{Math.round(display.bounds.width)} × {Math.round(display.bounds.height)} · captures this window only</span>
+            </div>}
             <div className="region-grid">
               {(['x', 'y', 'width', 'height'] as const).map((key) => (
                 <label key={key}>{key.toUpperCase()}
-                  <input type="number" value={Math.round(region[key])} onChange={(event) =>
+                  <input type="number" value={Math.round(region[key])} disabled={display?.kind === 'window'} onChange={(event) =>
                     setRegion({ ...region, [key]: Number(event.target.value) })} />
                 </label>
               ))}
@@ -500,7 +532,7 @@ function App() {
             </div>
           </div>
           <button className="primary record-button" disabled={!isDesktop || !selectedDisplay} onClick={beginRecording}>
-            <span className="record-dot" /> Start region recording <kbd>Ctrl R</kbd>
+            <span className="record-dot" /> Start {display?.kind === 'window' ? 'window' : 'region'} recording <kbd>Ctrl R</kbd>
           </button>
           <div className="privacy-note"><EyeOff size={15} /> No account. No upload. No raw typing captured.</div>
           {phase === 'countdown' && <div className="countdown"><span>{countdown}</span><small>Get ready</small></div>}

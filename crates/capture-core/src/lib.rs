@@ -42,7 +42,7 @@ pub struct CaptureSummary {
 
 #[async_trait]
 pub trait CaptureBackend: Send + Sync {
-    async fn displays(&self) -> Result<Vec<DisplaySource>>;
+    async fn sources(&self) -> Result<Vec<DisplaySource>>;
     async fn start(&self, request: CaptureRequest) -> Result<()>;
     async fn pause(&self) -> Result<()>;
     async fn resume(&self) -> Result<()>;
