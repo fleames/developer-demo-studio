@@ -1,0 +1,15 @@
+[package]
+name = "export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+analysis = { path = "../analysis" }
+project-model = { path = "../project-model" }
+renderer = { path = "../renderer" }
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+uuid.workspace = true

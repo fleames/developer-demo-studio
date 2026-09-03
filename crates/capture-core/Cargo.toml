@@ -1,0 +1,11 @@
+[package]
+name = "capture-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+project-model = { path = "../project-model" }
+serde.workspace = true
+thiserror.workspace = true

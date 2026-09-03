@@ -1,0 +1,27 @@
+[package]
+name = "capture-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+capture-core = { path = "../capture-core" }
+parking_lot.workspace = true
+project-model = { path = "../project-model" }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-capture = "2.0.1"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true

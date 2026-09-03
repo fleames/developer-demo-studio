@@ -1,0 +1,25 @@
+[package]
+name = "devdemo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+analysis = { path = "../../../crates/analysis" }
+capture-core = { path = "../../../crates/capture-core" }
+capture-windows = { path = "../../../crates/capture-windows" }
+directories.workspace = true
+export = { path = "../../../crates/export" }
+parking_lot.workspace = true
+project-model = { path = "../../../crates/project-model" }
+serde.workspace = true
+tauri = { version = "2", features = ["protocol-asset"] }
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+tempfile.workspace = true

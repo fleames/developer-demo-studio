@@ -1,0 +1,12 @@
+/target
+/node_modules
+**/node_modules
+**/dist
+**/.DS_Store
+*.ddp/
+*.gif
+*.mp4
+*.mkv
+*.tmp
+src-tauri/gen/
+src-tauri/binaries/

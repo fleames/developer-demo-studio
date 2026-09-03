@@ -1,0 +1,69 @@
+{
+  "scene": {
+    "schemaVersion": 1,
+    "trimStartMs": 100,
+    "trimEndMs": 900,
+    "crop": { "x": 0.1, "y": 0.2, "width": 0.8, "height": 0.6 },
+    "zooms": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "startMs": 100,
+        "endMs": 900,
+        "focus": { "x": 0.25, "y": 0.4 },
+        "scale": 1.8,
+        "easing": "spring",
+        "generated": true
+      }
+    ],
+    "blurMasks": [
+      {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "startMs": 200,
+        "endMs": 700,
+        "region": { "x": 0.6, "y": 0.25, "width": 0.2, "height": 0.1 },
+        "intensity": 12
+      }
+    ],
+    "cursorSmoothing": 0.72,
+    "clickEmphasis": true
+  },
+  "events": [
+    { "type": "cursor", "timestampMs": 0, "position": { "x": 0.1, "y": 0.2 } },
+    {
+      "type": "click",
+      "timestampMs": 400,
+      "position": { "x": 0.35, "y": 0.45 },
+      "button": "left",
+      "count": 1
+    },
+    { "type": "shortcut", "timestampMs": 450, "keys": ["Ctrl", "K"] },
+    { "type": "cursor", "timestampMs": 1000, "position": { "x": 0.9, "y": 0.8 } }
+  ],
+  "samples": [
+    {
+      "timestampMs": 100,
+      "scale": 1.0,
+      "focus": { "x": 0.25, "y": 0.4 },
+      "cursor": { "x": 0.18, "y": 0.26 }
+    },
+    {
+      "timestampMs": 300,
+      "scale": 1.8,
+      "focus": { "x": 0.25, "y": 0.4 },
+      "cursor": { "x": 0.34, "y": 0.38 }
+    },
+    {
+      "timestampMs": 850,
+      "scale": 1.125,
+      "focus": { "x": 0.25, "y": 0.4 },
+      "cursor": { "x": 0.78, "y": 0.71 }
+    }
+  ],
+  "mappingSample": {
+    "timestampMs": 300,
+    "source": { "x": 0.6, "y": 0.25 },
+    "output": { "x": 0.975, "y": -0.1166666667 }
+  },
+  "clickSample": { "timestampMs": 600, "ageMs": 200, "radius": 16.6666666667 },
+  "shortcutSample": { "timestampMs": 600, "label": "Ctrl + K" }
+}
