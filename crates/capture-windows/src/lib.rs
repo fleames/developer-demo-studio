@@ -79,10 +79,12 @@ mod implementation {
     }
 
     struct FrameFlags {
-        encoder: Arc<Mutex<EncoderSink>>,
+        encoder: Arc<Mutex<Option<EncoderSink>>>,
+        output_path: std::path::PathBuf,
         crop: Option<(u32, u32, u32, u32)>,
         paused: Arc<AtomicBool>,
         frames: Arc<AtomicU64>,
+        frame_rate: u32,
         frame_interval: Duration,
     }
 
@@ -90,6 +92,7 @@ mod implementation {
         flags: FrameFlags,
         contiguous: Vec<u8>,
         last_frame: Option<Instant>,
+        encoded_size: Option<(u32, u32)>,
     }
 
     impl GraphicsCaptureApiHandler for FrameHandler {
@@ -101,6 +104,7 @@ mod implementation {
                 flags: context.flags,
                 contiguous: Vec::new(),
                 last_frame: None,
+                encoded_size: None,
             })
         }
 
@@ -125,8 +129,22 @@ mod implementation {
             } else {
                 frame.buffer()?
             };
+            let size = (buffer.width(), buffer.height());
+            if self.encoded_size.is_some_and(|encoded| encoded != size) {
+                return Ok(());
+            }
             let pixels = buffer.as_nopadding_buffer(&mut self.contiguous);
-            if let Some(stdin) = self.flags.encoder.lock().stdin.as_mut() {
+            let mut encoder = self.flags.encoder.lock();
+            if encoder.is_none() {
+                *encoder = Some(spawn_encoder(
+                    &self.flags.output_path,
+                    size.0,
+                    size.1,
+                    self.flags.frame_rate,
+                )?);
+                self.encoded_size = Some(size);
+            }
+            if let Some(stdin) = encoder.as_mut().and_then(|encoder| encoder.stdin.as_mut()) {
                 stdin.write_all(pixels)?;
                 self.flags.frames.fetch_add(1, Ordering::Relaxed);
             }
@@ -136,7 +154,7 @@ mod implementation {
 
     struct ActiveCapture {
         control: CaptureControl<FrameHandler, HandlerError>,
-        encoder: Arc<Mutex<EncoderSink>>,
+        encoder: Arc<Mutex<Option<EncoderSink>>>,
         sampler_stop: Arc<AtomicBool>,
         sampler: thread::JoinHandle<()>,
         paused: Arc<AtomicBool>,
@@ -221,17 +239,16 @@ mod implementation {
             if let Some(parent) = request.output_path.parent() {
                 fs::create_dir_all(parent).map_err(backend_error)?;
             }
-            let width = request.region.width.round() as u32;
-            let height = request.region.height.round() as u32;
-            let encoder = spawn_encoder(&request.output_path, width, height, request.frame_rate)?;
-            let encoder = Arc::new(Mutex::new(encoder));
+            let encoder = Arc::new(Mutex::new(None));
             let paused = Arc::new(AtomicBool::new(false));
             let frames = Arc::new(AtomicU64::new(0));
             let flags = FrameFlags {
                 encoder: encoder.clone(),
+                output_path: request.output_path.clone(),
                 crop,
                 paused: paused.clone(),
                 frames: frames.clone(),
+                frame_rate: request.frame_rate,
                 frame_interval: Duration::from_secs_f64(1.0 / request.frame_rate.max(1) as f64),
             };
             let control = match target {
@@ -294,7 +311,9 @@ mod implementation {
                 .join()
                 .map_err(|_| CaptureError::Backend("input sampler panicked".into()))?;
             capture.control.stop().map_err(backend_error)?;
-            let mut encoder = capture.encoder.lock();
+            let mut encoder = capture.encoder.lock().take().ok_or_else(|| {
+                CaptureError::Backend("capture ended before a frame arrived".into())
+            })?;
             encoder.stdin.take();
             let status = encoder.child.wait().map_err(backend_error)?;
             if !status.success() {
@@ -315,10 +334,11 @@ mod implementation {
             capture.sampler_stop.store(true, Ordering::Relaxed);
             let _ = capture.sampler.join();
             let _ = capture.control.stop();
-            let mut encoder = capture.encoder.lock();
-            encoder.stdin.take();
-            let _ = encoder.child.kill();
-            let _ = encoder.child.wait();
+            if let Some(mut encoder) = capture.encoder.lock().take() {
+                encoder.stdin.take();
+                let _ = encoder.child.kill();
+                let _ = encoder.child.wait();
+            }
             let _ = fs::remove_file(capture.output_path);
             Ok(())
         }
