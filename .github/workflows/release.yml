@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  windows:
+    name: Build Windows release
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify source
+        run: |
+          npm run lint
+          npm run test --workspace desktop
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+
+      - name: Build application
+        run: npm run tauri --workspace desktop -- build
+
+      - name: Package portable alpha
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/package | Out-Null
+          Copy-Item target/release/devdemo-app.exe dist/package/Developer-Demo-Studio.exe
+          Copy-Item README.md, LICENSE dist/package/
+          @"
+          Developer Demo Studio requires FFmpeg and FFprobe on PATH.
+          This alpha package does not bundle FFmpeg.
+          "@ | Set-Content dist/package/RELEASE-NOTES.txt
+          Compress-Archive -Path dist/package/* -DestinationPath dist/developer-demo-studio-windows-x64.zip
+          (Get-FileHash dist/developer-demo-studio-windows-x64.zip -Algorithm SHA256).Hash.ToLower() |
+            Set-Content dist/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: developer-demo-studio-windows-x64
+          path: |
+            dist/developer-demo-studio-windows-x64.zip
+            dist/SHA256SUMS.txt
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/developer-demo-studio-windows-x64.zip
+            dist/SHA256SUMS.txt
