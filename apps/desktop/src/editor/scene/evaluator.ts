@@ -94,6 +94,20 @@ export function isWithinTrim(scene: Scene, timestampMs: number): boolean {
   return timestampMs >= scene.trimStartMs && timestampMs <= scene.trimEndMs
 }
 
+export function centeredZoomRange(
+  trimStartMs: number,
+  trimEndMs: number,
+  durationMs: number,
+): { startMs: number; endMs: number } | null {
+  const trimStart = Math.round(trimStartMs)
+  const trimEnd = Math.round(trimEndMs)
+  if (trimEnd - trimStart < 100) return null
+  const preferredStart = Math.round(Math.max(trimStart, durationMs / 2 - 500))
+  const endMs = Math.min(trimEnd, preferredStart + 1_200)
+  const startMs = Math.max(trimStart, Math.min(preferredStart, endMs - 100))
+  return { startMs, endMs }
+}
+
 function zoomProgress(zoom: Zoom, timestampMs: number): number {
   const duration = Math.max(1, zoom.endMs - zoom.startMs)
   const edge = Math.max(80, Math.min(320, Math.floor(duration / 4)))

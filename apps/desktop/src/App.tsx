@@ -6,6 +6,7 @@ import {
   Play, Redo2, RotateCcw, Scissors, ShieldCheck, Sparkles, Undo2, ZoomIn,
 } from 'lucide-react'
 import { PreviewCanvas } from './editor/preview/PreviewCanvas'
+import { centeredZoomRange } from './editor/scene/evaluator'
 import type {
   BlurMask,
   Display,
@@ -31,6 +32,7 @@ function App() {
   const [project, setProject] = useState<Project | null>(null)
   const [selectedZoom, setSelectedZoom] = useState<string | null>(null)
   const [playheadMs, setPlayheadMs] = useState(0)
+  const [transportRequest, setTransportRequest] = useState(0)
   const [timelineScale, setTimelineScale] = useState(1)
   const [dragStart, setDragStart] = useState<Point | null>(null)
   const [exportProgress, setExportProgress] = useState(0)
@@ -369,9 +371,17 @@ function App() {
 
   function addZoom() {
     if (!project) return
-    const startMs = Math.max(project.scene.trimStartMs, project.durationMs / 2 - 500)
+    const range = centeredZoomRange(
+      project.scene.trimStartMs,
+      project.scene.trimEndMs,
+      project.durationMs,
+    )
+    if (!range) {
+      setNotice('The trimmed recording is too short for a zoom event.')
+      return
+    }
     const zoom: Zoom = {
-      id: crypto.randomUUID(), startMs, endMs: startMs + 1200,
+      id: crypto.randomUUID(), ...range,
       focus: { x: 0.5, y: 0.5 }, scale: 1.55, easing: 'easeInOut', generated: false,
     }
     void saveScene({ ...project.scene, zooms: [...project.scene.zooms, zoom] })
@@ -407,11 +417,41 @@ function App() {
     }
   }
 
+  function navigate(section: 'project' | 'recording' | 'export') {
+    if (phase === 'recording' || phase === 'paused' || phase === 'processing' || phase === 'countdown') {
+      setNotice('Finish or discard the active recording before leaving this screen.')
+      return
+    }
+    if (section === 'recording') {
+      setPhase('ready')
+      return
+    }
+    if (!project) {
+      setPhase('ready')
+      setNotice('Record a demo before opening the editor or export controls.')
+      return
+    }
+    setPhase('editor')
+    if (section === 'export') {
+      window.setTimeout(() => {
+        document.querySelector<HTMLElement>('.export-panel')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
+        document.querySelector<HTMLButtonElement>('.export-panel button')?.focus()
+      })
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand"><Aperture size={18} /><span>Developer Demo Studio</span><b>ALPHA</b></div>
-        <nav><button className="nav-active">Project</button><button>Recording</button><button>Export</button></nav>
+        <nav>
+          <button className={phase === 'editor' ? 'nav-active' : ''} onClick={() => navigate('project')}>Project</button>
+          <button className={phase === 'ready' || phase === 'countdown' || phase === 'recording' || phase === 'paused' ? 'nav-active' : ''} onClick={() => navigate('recording')}>Recording</button>
+          <button onClick={() => navigate('export')}>Export</button>
+        </nav>
         <div className="privacy"><ShieldCheck size={15} /> Local only</div>
       </header>
 
@@ -493,6 +533,7 @@ function App() {
                     events={project.events}
                     media={project.media}
                     seekToMs={playheadMs}
+                    togglePlaybackRequest={transportRequest}
                     onTimeChange={setPlayheadMs}
                     onWarning={setNotice}
                   /> : <div className="preview-fallback"><EyeOff /><strong>Preview unavailable</strong>
@@ -502,7 +543,7 @@ function App() {
               </div>
             </div>
             <div className="timeline">
-              <div className="timeline-head"><button><Play size={15} /></button><span>00:00</span><div className="ruler" /><span>{seconds(project.durationMs)}</span>
+              <div className="timeline-head"><button aria-label="Play or pause preview" onClick={() => setTransportRequest((request) => request + 1)}><Play size={15} /></button><span>{seconds(playheadMs)}</span><div className="ruler" /><span>{seconds(project.durationMs)}</span>
                 <label className="timeline-zoom">Zoom <input aria-label="Timeline zoom" type="range" min="1" max="4" step=".25" value={timelineScale} onChange={(event) => setTimelineScale(Number(event.target.value))} /></label>
               </div>
               <div className="track"><label>ZOOM</label><div className="track-line" style={{ minWidth: `${timelineScale * 100}%` }} onPointerDown={seekFromTimeline}>

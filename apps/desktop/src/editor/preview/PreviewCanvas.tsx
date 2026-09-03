@@ -18,6 +18,7 @@ type Props = {
   events: InputEvent[]
   media: MediaMetadata
   seekToMs?: number
+  togglePlaybackRequest?: number
   onTimeChange?: (timestampMs: number) => void
   onWarning?: (message: string) => void
 }
@@ -28,6 +29,7 @@ export function PreviewCanvas({
   events,
   media,
   seekToMs,
+  togglePlaybackRequest = 0,
   onTimeChange,
   onWarning,
 }: Props) {
@@ -41,6 +43,7 @@ export function PreviewCanvas({
   const eventsRef = useRef(events)
   const onTimeChangeRef = useRef(onTimeChange)
   const warningRef = useRef(onWarning)
+  const lastPlaybackRequestRef = useRef(togglePlaybackRequest)
   const [playing, setPlaying] = useState(false)
   const [timestampMs, setTimestampMs] = useState(scene.trimStartMs)
 
@@ -151,6 +154,21 @@ export function PreviewCanvas({
     if (seekToMs === undefined || !video || Math.abs(video.currentTime * 1_000 - seekToMs) < 25) return
     video.currentTime = seekToMs / 1_000
   }, [seekToMs])
+
+  useEffect(() => {
+    if (togglePlaybackRequest === lastPlaybackRequestRef.current) return
+    lastPlaybackRequestRef.current = togglePlaybackRequest
+    const video = videoRef.current
+    if (!video) return
+    if (video.paused) {
+      if (video.currentTime * 1_000 >= scene.trimEndMs) {
+        video.currentTime = scene.trimStartMs / 1_000
+      }
+      void video.play()
+    } else {
+      video.pause()
+    }
+  }, [togglePlaybackRequest, scene.trimEndMs, scene.trimStartMs])
 
   useEffect(() => {
     onTimeChangeRef.current = onTimeChange

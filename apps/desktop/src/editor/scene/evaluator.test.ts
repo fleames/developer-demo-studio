@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import fixture from '../../../../../fixtures/scene-evaluator.json'
 import type { InputEvent, Scene } from '../types'
 import {
+  centeredZoomRange,
   clicksAt,
   cursorAt,
   shortcutAt,
@@ -42,5 +43,13 @@ describe('scene evaluator parity', () => {
     const mapped = sourcePointToOutput(mapping.source, transformAt(scene, mapping.timestampMs))
     expect(mapped.x).toBeCloseTo(mapping.output.x, 8)
     expect(mapped.y).toBeCloseTo(mapping.output.y, 8)
+  })
+
+  it('creates integer zoom timestamps accepted by the Rust u64 contract', () => {
+    expect(centeredZoomRange(0, 7_433, 7_433)).toEqual({
+      startMs: 3_217,
+      endMs: 4_417,
+    })
+    expect(centeredZoomRange(0, 50, 50)).toBeNull()
   })
 })
